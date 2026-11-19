@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, getSession, onUnauthorized, setSession } from '../lib/api'
+import { api, ApiError, getSession, onUnauthorized, setSession } from '../lib/api'
 import type { Auth } from '../types/api'
 import { ErrorState, Forbidden, LoadingSkeleton } from '../components/states'
 
@@ -55,8 +55,11 @@ export function ProtectedRoute() {
   const me = useMe()
   const location = useLocation()
   if (!session.signedIn) return <Navigate to="/login" replace state={{ next: location.pathname + location.search }} />
-  if (me.isPending) return <div className="container section"><LoadingSkeleton /></div>
-  if (me.isError) return <div className="container section"><ErrorState error={me.error} retry={() => void me.refetch()} /></div>
+  if (!me.data || (me.error instanceof ApiError && [401, 403].includes(me.error.status))) {
+    return <div className="container section">{me.isError
+      ? <ErrorState error={me.error} retry={() => void me.refetch()} />
+      : <LoadingSkeleton />}</div>
+  }
   if (!me.data.onboardingCompleted && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />
   return <Outlet />
 }

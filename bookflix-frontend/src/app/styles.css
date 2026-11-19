@@ -120,7 +120,7 @@ pre { margin-top: .65rem; padding: .8rem; border-radius: .55rem; background: var
 .book-card { min-width: 0; scroll-snap-align: start; display: grid; gap: .24rem; }
 .book-link { display: grid; gap: .55rem; border-radius: .45rem; }
 .book-link:hover h3 { color: var(--rose); }
-.book-link h3 { color: var(--ink); overflow-wrap: anywhere; line-height: 1.32; }
+.book-link h3 { color: var(--ink); line-height: 1.32; overflow: hidden; text-overflow: ellipsis; }
 .book-author { font-size: .9rem; color: var(--soft); line-height: 1.35; }
 .book-reason { font-size: .82rem; color: var(--rose); margin-top: .12rem; line-height: 1.4; }
 .book-cover {
@@ -140,7 +140,8 @@ pre { margin-top: .65rem; padding: .8rem; border-radius: .55rem; background: var
 .book-cover img { position: absolute; inset: 0; height: 100%; width: 100%; object-fit: cover; }
 .cover-print { position: absolute; inset: 7% 8% 7% 10%; border: 1px solid rgba(234,197,139,.48); outline: 1px solid rgba(234,197,139,.2); outline-offset: .19rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6%; padding: 5%; text-align: center; color: #f8e5bd; }
 .cover-mark { color: var(--gold); width: 18cqw; height: 18cqw; flex: none; }
-.cover-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; overflow-wrap: anywhere; font: 600 clamp(.8rem, 12cqw, 2.4rem)/1.06 var(--display); }
+.cover-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; text-overflow: ellipsis; text-wrap: balance; font: 600 clamp(.66rem, 10cqw, 2.2rem)/1.08 var(--display); }
+.book-link h3, .cover-title { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .cover-author { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; text-transform: uppercase; font-size: clamp(.56rem, 5.5cqw, .95rem); letter-spacing: .08em; line-height: 1.35; }
 .card-progress { display: flex; gap: .45rem; align-items: center; font-size: .83rem; color: var(--soft); }
 progress { accent-color: var(--primary); width: min(8rem, 75%); height: .6rem; }

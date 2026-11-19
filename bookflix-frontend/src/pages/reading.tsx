@@ -8,7 +8,7 @@ import { ConfirmDialog, EmptyState, ErrorState, FormError, LoadingSkeleton, NotF
 import { BookshelfStatusControl } from '../features/shelf-control'
 import { interactionKeys, useInvalidate, useRecommendations, useShelf } from '../hooks/catalog'
 import { api, ApiError } from '../lib/api'
-import { shelfLabels, shelfStatuses } from '../lib/labels'
+import { recommendationFallback, shelfLabels, shelfStatuses } from '../lib/labels'
 import type { BookDetail, Review, ShelfStatus } from '../types/api'
 
 function ReviewForm({ bookId, review }: { bookId: number; review?: Review }) {
@@ -106,7 +106,7 @@ function SimilarBooks({ id }: { id: number }) {
   if (similar.isPending) return <section className="shelf"><h2>Similar books</h2><LoadingSkeleton cards /></section>
   if (similar.isError) return <section className="shelf"><h2>Similar books</h2><ErrorState error={similar.error} retry={() => void similar.refetch()} /></section>
   if (!similar.data.items.length) return <section className="shelf"><h2>Similar books</h2><EmptyState title="No similar books found." /></section>
-  return <BookCarousel title="Similar books" items={similar.data.items} note={similar.data.degraded ? 'Basic recommendations' : undefined} />
+  return <BookCarousel title="Similar books" items={similar.data.items} note={similar.data.degraded ? recommendationFallback : undefined} />
 }
 
 function BookDetails({ id }: { id: number }) {

@@ -10,8 +10,8 @@ export function useShelf(status: ShelfStatus) {
   return useQuery({ queryKey: ['bookshelf', status], queryFn: ({ signal }) => api.shelf(status, signal) })
 }
 
-export function useRecommendations(shelf: Parameters<typeof api.recommendations>[0]) {
-  return useQuery({ queryKey: ['recommendations', shelf], queryFn: ({ signal }) => api.recommendations(shelf, signal) })
+export function useRecommendations(shelf: Parameters<typeof api.recommendations>[0], limit = 12) {
+  return useQuery({ queryKey: ['recommendations', shelf, limit], queryFn: ({ signal }) => api.recommendations(shelf, signal, limit) })
 }
 
 export function useInvalidate() {

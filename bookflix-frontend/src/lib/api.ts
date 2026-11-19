@@ -1,13 +1,31 @@
 import type { AdminStats, Auth, Author, Book, BookDetail, BookRequest, BookSort, ErrorDetail, Genre, LikeStatus, Page, Rebuild, Recommendation, Review, ShelfEntry, ShelfStatus, User, UserStats } from '../types/api'
 
-export const demoMode = import.meta.env.VITE_API_MODE === 'demo'
-const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/+$/, '')
-const storageKey = demoMode ? 'bookflix.demo.session' : 'bookflix.live.session'
-let session: { token: string; expiresAt: number } | null = readSession()
+export const demoMode = import.meta.env.DEV && import.meta.env.MODE === 'demo'
+const base = (import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:8080').replace(/\/+$/, '')
+const storageKey = demoMode ? 'bookflix.demo.session' : 'bookflix.live.session:' + base
+type StoredSession = { token: string; expiresAt: number }
+let session = readSession()
 let unauthorized: () => void = () => {}
+let expiryTimer: ReturnType<typeof setTimeout> | undefined
 
-function readSession() {
-  try { return JSON.parse(sessionStorage.getItem(storageKey) ?? 'null') } catch { return null }
+function readSession(): StoredSession | null {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null') as Partial<StoredSession> | null
+    if (typeof stored?.token === 'string' && stored.token && typeof stored.expiresAt === 'number' && Number.isFinite(stored.expiresAt)) {
+      return { token: stored.token, expiresAt: stored.expiresAt }
+    }
+  } catch { /* The session can be kept in memory if storage is disabled. */ }
+  return null
+}
+
+function expireSession() {
+  setSession(null)
+  unauthorized()
+}
+
+function scheduleExpiry() {
+  clearTimeout(expiryTimer)
+  if (session) expiryTimer = setTimeout(expireSession, Math.max(0, session.expiresAt - Date.now()))
 }
 
 export function setSession(auth: Auth | null) {
@@ -16,19 +34,21 @@ export function setSession(auth: Auth | null) {
     if (session) sessionStorage.setItem(storageKey, JSON.stringify(session))
     else sessionStorage.removeItem(storageKey)
   } catch { /* Memory remains available when storage is disabled. */ }
+  scheduleExpiry()
 }
 
 export function getSession() {
-  if (session && session.expiresAt <= Date.now()) {
-    setSession(null)
-    unauthorized()
-  }
+  if (session && session.expiresAt <= Date.now()) expireSession()
   return session?.token ?? null
 }
 
 export function onUnauthorized(handler: () => void) {
   unauthorized = handler
-  return () => { unauthorized = () => {} }
+  scheduleExpiry()
+  return () => {
+    unauthorized = () => {}
+    clearTimeout(expiryTimer)
+  }
 }
 
 export class ApiError extends Error {
@@ -48,7 +68,7 @@ type Options = { method?: string; body?: unknown; signal?: AbortSignal; auth?: b
 async function request<T>(path: string, { method = 'GET', body, signal, auth = true }: Options = {}): Promise<T> {
   const token = auth ? getSession() : null
   try {
-    if (demoMode) {
+    if (import.meta.env.DEV && demoMode) {
       const { demoRequest } = await import('./demo')
       signal?.throwIfAborted()
       return await demoRequest(path, method, body, token) as T
@@ -65,11 +85,16 @@ async function request<T>(path: string, { method = 'GET', body, signal, auth = t
       throw new ApiError(0, 'NETWORK_ERROR', 'Bookflix could not reach the server. Check your connection and try again.')
     }
     if (!response.ok) throw httpError(response.status, await response.json().catch(() => undefined))
-    return response.status === 204 ? undefined as T : response.json()
+    if (response.status === 204) return undefined as T
+    if (!response.headers.get('Content-Type')?.includes('application/json')) {
+      throw new ApiError(502, 'INVALID_API_RESPONSE', 'The server returned an unexpected response. Check the Bookflix API URL.')
+    }
+    return await response.json().catch(() => {
+      throw new ApiError(502, 'INVALID_API_RESPONSE', 'The Bookflix API returned an unreadable response. Try again shortly.')
+    })
   } catch (error) {
     if (error instanceof ApiError && error.status === 401 && token && session?.token === token) {
-      setSession(null)
-      unauthorized()
+      expireSession()
     }
     throw error
   }
@@ -103,8 +128,8 @@ export const api = {
   shelf: (status: ShelfStatus, signal?: AbortSignal) => request<ShelfEntry[]>(query('/bookshelf', { status }), { signal }),
   saveShelf: (id: number, body: { status: ShelfStatus; progress?: number }) => write<ShelfEntry>('/bookshelf/' + id, 'PUT', body),
   removeShelf: (id: number) => write<void>('/bookshelf/' + id, 'DELETE'),
-  recommendations: (shelf: 'for-you' | 'because-you-liked' | 'trending' | 'genres' | `similar/${number}`, signal?: AbortSignal) =>
-    request<Recommendation>(query('/recommendations/' + shelf, { limit: 12 }), { signal }),
+  recommendations: (shelf: 'for-you' | 'because-you-liked' | 'trending' | 'genres' | `similar/${number}`, signal?: AbortSignal, limit = 12) =>
+    request<Recommendation>(query('/recommendations/' + shelf, { limit }), { signal }),
   adminStats: (signal?: AbortSignal) => request<AdminStats>('/admin/stats', { signal }),
   rebuild: () => write<Rebuild>('/admin/recommendations/rebuild', 'POST'),
   saveBook: (id: number | null, body: BookRequest) => write<BookDetail>(id ? '/admin/books/' + id : '/admin/books', id ? 'PUT' : 'POST', body),

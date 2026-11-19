@@ -5,10 +5,11 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useSession } from '../app/session'
 import { BookCard, BookCarousel, BookCover, Pagination, SearchBar } from '../components/catalog'
 import { EmptyState, ErrorState, LoadingSkeleton } from '../components/states'
+import { HOME_SHELF_LIMIT, selectHomeShelves } from '../features/home-shelves'
 import { useGenres, useRecommendations, useShelf } from '../hooks/catalog'
 import { api } from '../lib/api'
-import { sortLabels } from '../lib/labels'
-import type { Book, BookSort } from '../types/api'
+import { recommendationFallback, sortLabels } from '../lib/labels'
+import type { Book, BookSort, Recommendation } from '../types/api'
 
 function HeroBanner({ featured, reader }: { featured?: Book; reader: boolean }) {
   return <section className={'hero' + (reader ? ' reader-hero' : '')}>
@@ -28,14 +29,19 @@ function HeroBanner({ featured, reader }: { featured?: Book; reader: boolean }) 
   </section>
 }
 
-function RecommendationShelf({ title, result, empty, hideUnanchored }: {
-  title: string; result: ReturnType<typeof useRecommendations>; empty: string; hideUnanchored?: boolean
+function RecommendationShelf({ title, result, items = result.data?.items ?? [], empty, hideUnanchored }: {
+  title: string; result: ReturnType<typeof useRecommendations>; items?: Recommendation['items']; empty: string; hideUnanchored?: boolean
 }) {
   if (result.isPending) return <section className="shelf"><h2>{title}</h2><LoadingSkeleton cards /></section>
-  if (result.isError) return <section className="shelf"><h2>{title}</h2><ErrorState error={result.error} retry={() => void result.refetch()} /></section>
-  if (hideUnanchored && !result.data.sourceBook) return null
-  if (!result.data.items.length) return <section className="shelf"><h2>{title}</h2><EmptyState title={empty} /></section>
-  return <BookCarousel title={title} items={result.data.items} note={result.data.degraded ? 'Basic recommendations' : undefined} />
+  if (result.isError && !items.length) return <section className="shelf"><h2>{title}</h2><ErrorState error={result.error} retry={() => void result.refetch()} /></section>
+  if (hideUnanchored && !result.data?.sourceBook) return null
+  if (!items.length) {
+    const message = result.data?.items.length ? 'These books are already shown in other shelves.' : empty
+    return <section className="shelf"><h2>{title}</h2><EmptyState title={message} /></section>
+  }
+  const note = result.isError ? 'Couldn’t refresh this shelf. Showing the last loaded picks.' :
+    result.data?.degraded ? recommendationFallback : undefined
+  return <BookCarousel title={title} items={items} note={note} />
 }
 
 export function LandingPage() {
@@ -52,21 +58,26 @@ export function LandingPage() {
 }
 
 export function HomePage() {
-  const personal = useRecommendations('for-you')
-  const anchored = useRecommendations('because-you-liked')
-  const trending = useRecommendations('trending')
-  const genres = useRecommendations('genres')
+  const personal = useRecommendations('for-you', HOME_SHELF_LIMIT)
+  const anchored = useRecommendations('because-you-liked', HOME_SHELF_LIMIT)
+  const trending = useRecommendations('trending', HOME_SHELF_LIMIT)
+  const genres = useRecommendations('genres', HOME_SHELF_LIMIT)
   const reading = useShelf('READING')
-  const featured = personal.data?.items[0]?.book ?? trending.data?.items[0]?.book
+  const shelves = selectHomeShelves({
+    personal: personal.data?.items, anchored: anchored.data?.items,
+    trending: trending.data?.items, genres: genres.data?.items,
+  }, reading.data)
+  const featured = shelves.personal[0]?.book ?? shelves.trending[0]?.book ?? shelves.genres[0]?.book ?? shelves.anchored[0]?.book
   return <>
     <HeroBanner featured={featured} reader />
     <div className="container section stacked">
-      {reading.data && reading.data.length > 0 && <BookCarousel title="Continue Reading" items={reading.data} />}
-      {reading.isError && <section className="shelf"><h2>Continue Reading</h2><ErrorState error={reading.error} retry={() => void reading.refetch()} /></section>}
-      <RecommendationShelf title="For You" result={personal} empty="You’re caught up with your recommendations." />
-      <RecommendationShelf title="Because You Liked" result={anchored} empty="No related books are available." hideUnanchored />
-      <RecommendationShelf title="Trending" result={trending} empty="No trending books yet." />
-      <RecommendationShelf title="Based on Your Genres" result={genres} empty="Select favorite genres in your profile to see matching books." />
+      {reading.data?.length ? <BookCarousel title="Continue Reading" items={reading.data}
+        note={reading.isError ? 'Couldn’t refresh your reading progress. Showing the last loaded shelf.' : undefined} /> :
+        reading.isError && <section aria-label="Reading progress"><ErrorState error={reading.error} retry={() => void reading.refetch()} /></section>}
+      <RecommendationShelf title="For You" result={personal} items={shelves.personal} empty="You’re caught up with your recommendations." />
+      <RecommendationShelf title="Because You Liked" result={anchored} items={shelves.anchored} empty="No related books are available." hideUnanchored />
+      <RecommendationShelf title="Trending" result={trending} items={shelves.trending} empty="No trending books yet." />
+      <RecommendationShelf title="Based on Your Genres" result={genres} items={shelves.genres} empty="Select favorite genres in your profile to see matching books." />
     </div>
   </>
 }
