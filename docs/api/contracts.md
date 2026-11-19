@@ -4,7 +4,13 @@
 Any change to a path, parameter, field, enum or status code must be made here first and called out in
 the change log at the bottom.
 
-- Base URL: `VITE_API_BASE_URL` (local default `http://localhost:8080`). All paths below start with `/api`.
+- Base URL: `VITE_API_BASE_URL`. With Docker it is `http://localhost:${BOOKFLIX_API_PORT}` (default 8080; set
+  it in the root `.env` if 8080 is taken, e.g. `8081`). All paths below start with `/api`.
+- **Frontend startup:** `npm run dev` and production builds use the live API. `npm run dev:demo` explicitly
+  starts the optional browser-only development demo. Live recommendation shelves display backend reasons
+  and use `degraded: true` to show a catalog-based fallback notice.
+- CORS: browser origins must be listed in `BOOKFLIX_CORS_ALLOWED_ORIGINS` (default `http://localhost:5173`).
+  Other origins get `403` on preflight. No credentials or cookies are used.
 - JSON everywhere, `Content-Type: application/json`. Field names are **camelCase**.
 - Timestamps are ISO-8601 UTC strings, e.g. `"2026-11-19T12:30:52.893Z"`.
 - IDs are integers (JSON numbers).
@@ -24,6 +30,19 @@ Stateless **JWT bearer tokens** (HS256).
   before calling public endpoints.
 - `POST /api/auth/login` and `/register` are rate-limited per client IP (default 10 per minute). Exceeding
   the limit returns `429 RATE_LIMITED` with a `Retry-After` header in seconds.
+
+### Request headers
+
+| Header | When |
+|---|---|
+| `Authorization: Bearer <accessToken>` | Every endpoint marked *reader* or *admin*. Optional on public catalog/recommendation GETs (personalises `me`). |
+| `Content-Type: application/json` | Every request with a body (POST/PUT). |
+| `Accept: application/json` | Recommended on all requests. |
+
+**Public (no token needed):** `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/books`,
+`GET /api/books/{id}`, `GET /api/books/{id}/reviews`, `GET /api/genres`, `GET /api/authors`,
+`GET /api/recommendations/similar/{bookId}`, `GET /api/recommendations/trending`.
+Everything else under `/api` needs a token. `/api/admin/**` also needs role `ADMIN`.
 
 ### Enums
 
@@ -45,7 +64,15 @@ Stateless **JWT bearer tokens** (HS256).
 }
 ```
 
-`details` is always an array, empty unless the error is field-level.
+`details` is always an array, empty unless the error is field-level. Each entry is `{ field, message }`.
+No stack traces or exception messages are ever included.
+
+Which `400` code you get:
+- `VALIDATION_ERROR`: a Bean Validation failure on the body (e.g. `rating: 6`) or a query/path parameter
+  (e.g. `size=51`, `limit=0`). It is also returned for a parameter of the wrong type or an unknown enum in
+  a query string (e.g. `/api/books/abc`, `?status=FINISHED`); `details[0].field` names the parameter.
+- `MALFORMED_REQUEST`: the body is not valid JSON, or a JSON enum value is unknown (e.g. `"status": "FINISHED"`).
+- `BAD_REQUEST`: a semantic rule, e.g. an unknown `sort` key or unknown `genreIds`.
 
 | HTTP | `code` values |
 |---|---|
@@ -201,6 +228,33 @@ type RecommendationResponse = {
   hint is fine. It is never an error.
 - An ML outage never turns ordinary recommendation calls into `5xx`.
 
+How `for-you` is ranked (ML up), so the UI can show sensible copy:
+
+| User state | `strategy` | Ranking |
+|---|---|---|
+| No genres and no interactions | `POPULARITY` | Smoothed popularity |
+| Genres only (cold start) | `GENRE_POPULARITY` | `0.75·genre + 0.25·popularity` |
+| Any like, rating ≥ 4, or READING/COMPLETED shelf entry | `CONTENT_HYBRID` | `0.60·TF-IDF cosine + 0.30·genre + 0.10·popularity` |
+
+The ranking changes as soon as genres, likes, ratings or shelf entries change. There is no caching.
+Ratings ≤ 2 push similar books down. Liked, rated and shelved books (any status) are excluded.
+
+Example `GET /api/recommendations/for-you?limit=2` after liking *Dracula*:
+
+```json
+{
+  "shelf": "FOR_YOU", "strategy": "CONTENT_HYBRID", "degraded": false,
+  "modelVersion": "20261119T171108Z-1a2b3c", "sourceBook": null,
+  "items": [
+    { "book": { "id": 6, "title": "Frankenstein", "author": { "id": 4, "name": "Mary Shelley" }, "coverUrl": null,
+                "publishedYear": 1818, "genres": [{ "id": 6, "name": "Horror", "slug": "horror" }],
+                "averageRating": 0.0, "ratingCount": 0, "likeCount": 0 },
+      "score": 0.612345, "reason": "Similar to Dracula", "strategy": "CONTENT_HYBRID" }
+  ]
+}
+```
+(The ids, version string and score above are illustrative. Match on the shape, not on the values.)
+
 ## Admin (role `ADMIN`; readers get `403`, anonymous callers get `401`)
 
 | Method & path | Body | Success |
@@ -244,4 +298,6 @@ Admin list screens use the public reads: `GET /api/books`, `/api/authors` and `/
 
 | Date | Change |
 |---|---|
+| 2026-11-19 (c) | Documented live-by-default frontend startup and the opt-in development demo. REST endpoints and payloads are unchanged. |
+| 2026-11-19 (b) | Documentation only, no behaviour change. Added: request headers, the public endpoint list, CORS, live vs demo frontend mode, which `400` code applies (type mismatch / unknown query enum → `VALIDATION_ERROR` with the field in `details`), the for-you strategy table and an example. All verified live with `bookflix-backend/scripts/verify_contract.py`. |
 | 2026-11-19 | Initial contract. Additions beyond the original endpoint list: `GET /api/users/me/stats`, `DELETE /api/books/{id}/reviews/me`, `GET /api/recommendations/because-you-liked`, `GET /api/recommendations/genres`. `similar` and `trending` are public. Books are soft-deleted. |

@@ -33,3 +33,18 @@ docker compose up -d --build
 BOOKFLIX_API=http://localhost:8080 BOOKFLIX_DEV_ADMIN_EMAIL=... BOOKFLIX_DEV_ADMIN_PASSWORD=... \
   python bookflix-backend/scripts/smoke_e2e.py
 ```
+
+## Live contract verification
+`bookflix-backend/scripts/verify_contract.py` checks every endpoint group in `docs/api/contracts.md`
+against the running stack: response shapes, JWT/role/ownership rules, the error payload, and that
+`for-you` re-ranks when genres, likes, ratings or shelf entries change. With `--fallback` it confirms
+that every recommendation shelf returns `200` with `degraded: true` while ML is down.
+```
+set -a; . ./.env; set +a          # loads the dev admin credentials
+BOOKFLIX_API=http://localhost:$BOOKFLIX_API_PORT python bookflix-backend/scripts/verify_contract.py
+docker compose stop recommendation-service
+BOOKFLIX_API=http://localhost:$BOOKFLIX_API_PORT python bookflix-backend/scripts/verify_contract.py --fallback
+docker compose start recommendation-service
+```
+Each run makes up to 8 login/register calls. The auth rate limit is 10 per minute per IP, so wait about a
+minute between runs or you'll see `429 RATE_LIMITED`.
