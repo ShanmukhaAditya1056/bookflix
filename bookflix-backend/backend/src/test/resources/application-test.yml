@@ -1,0 +1,13 @@
+bookflix:
+  security:
+    # test-only value; never used outside the test profile
+    jwt-secret: test-only-signing-secret-0123456789-abcdefghijklmnop
+    auth-rate-limit-max-requests: 100000
+  ml:
+    enabled: false
+    rebuild-check-initial-delay: PT1H
+
+logging:
+  level:
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN

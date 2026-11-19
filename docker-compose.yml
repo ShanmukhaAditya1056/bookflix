@@ -1,0 +1,65 @@
+# Bookflix local stack: MySQL + private recommendation service + Spring Boot API.
+#   cp .env.example .env   # then fill in real values
+#   docker compose up --build
+# The recommendation service has NO published port: only the backend can reach it on the
+# internal "backend" network, authenticated with BOOKFLIX_ML_INTERNAL_TOKEN.
+name: bookflix
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: bookflix
+      MYSQL_USER: ${BOOKFLIX_DB_USER:-bookflix}
+      MYSQL_PASSWORD: ${BOOKFLIX_DB_PASSWORD:?set BOOKFLIX_DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:${BOOKFLIX_MYSQL_HOST_PORT:-3306}:3306"   # loopback only, for local tools / running the API outside Docker
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  recommendation-service:
+    build: ./bookflix-backend/recommendation-service
+    environment:
+      BOOKFLIX_ML_INTERNAL_TOKEN: ${BOOKFLIX_ML_INTERNAL_TOKEN:?set BOOKFLIX_ML_INTERNAL_TOKEN in .env}
+    volumes:
+      - ml-models:/data/models
+    networks: [backend]
+
+  backend:
+    build: ./bookflix-backend/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      recommendation-service:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      BOOKFLIX_DB_URL: jdbc:mysql://mysql:3306/bookflix?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      BOOKFLIX_DB_USER: ${BOOKFLIX_DB_USER:-bookflix}
+      BOOKFLIX_DB_PASSWORD: ${BOOKFLIX_DB_PASSWORD}
+      BOOKFLIX_JWT_SECRET: ${BOOKFLIX_JWT_SECRET:?set BOOKFLIX_JWT_SECRET (>= 32 chars) in .env}
+      BOOKFLIX_REQUIRE_SECRETS: "true"
+      BOOKFLIX_ML_ENABLED: "true"
+      BOOKFLIX_ML_BASE_URL: http://recommendation-service:8000
+      BOOKFLIX_ML_INTERNAL_TOKEN: ${BOOKFLIX_ML_INTERNAL_TOKEN}
+      BOOKFLIX_CORS_ALLOWED_ORIGINS: ${BOOKFLIX_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      BOOKFLIX_DEV_ADMIN_ENABLED: ${BOOKFLIX_DEV_ADMIN_ENABLED:-false}
+      BOOKFLIX_DEV_ADMIN_EMAIL: ${BOOKFLIX_DEV_ADMIN_EMAIL:-}
+      BOOKFLIX_DEV_ADMIN_PASSWORD: ${BOOKFLIX_DEV_ADMIN_PASSWORD:-}
+    ports:
+      - "${BOOKFLIX_API_PORT:-8080}:8080"
+    networks: [backend]
+
+networks:
+  backend:
+
+volumes:
+  mysql-data:
+  ml-models:

@@ -1,0 +1,18 @@
+# secrets
+.env
+*.env.local
+
+# backend
+bookflix-backend/backend/target/
+*.iml
+.idea/
+
+# recommendation service
+bookflix-backend/recommendation-service/.venv/
+bookflix-backend/recommendation-service/artifacts/
+__pycache__/
+.pytest_cache/
+
+# frontend
+node_modules/
+dist/

@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: bookflix-backend
+  datasource:
+    url: ${BOOKFLIX_DB_URL:jdbc:mysql://localhost:3306/bookflix?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${BOOKFLIX_DB_USER:bookflix}
+    password: ${BOOKFLIX_DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    # db/migration = schema (versioned), db/seed = idempotent repeatable catalog seed
+    locations: classpath:db/migration,classpath:db/seed
+
+server:
+  port: ${BOOKFLIX_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+  max-http-request-header-size: 16KB
+  tomcat:
+    max-http-form-post-size: 64KB
+    max-swallow-size: 1MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: ${BOOKFLIX_OPENAPI_ENABLED:true}
+  swagger-ui:
+    enabled: ${BOOKFLIX_OPENAPI_ENABLED:true}
+
+bookflix:
+  security:
+    # HS256 signing secret, >= 32 bytes. Blank => random ephemeral secret (dev only; tokens die on restart).
+    jwt-secret: ${BOOKFLIX_JWT_SECRET:}
+    jwt-issuer: bookflix
+    jwt-ttl: ${BOOKFLIX_JWT_TTL:PT2H}
+    # When true the app refuses to start without a configured JWT secret and ML token.
+    require-secrets: ${BOOKFLIX_REQUIRE_SECRETS:false}
+    cors-allowed-origins: ${BOOKFLIX_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    auth-rate-limit-max-requests: ${BOOKFLIX_AUTH_RATE_LIMIT:10}
+    auth-rate-limit-window: PT1M
+    max-request-bytes: 65536
+  ml:
+    enabled: ${BOOKFLIX_ML_ENABLED:true}
+    base-url: ${BOOKFLIX_ML_BASE_URL:http://localhost:8000}
+    internal-token: ${BOOKFLIX_ML_INTERNAL_TOKEN:}
+    connect-timeout: PT1S
+    read-timeout: PT2S
+    rebuild-timeout: PT60S
+    # how often to check whether the catalog changed and the model needs a rebuild
+    rebuild-check-interval: PT1M
+    # periodic rebuild so popularity signals stay fresh
+    periodic-rebuild-interval: PT6H
+  dev-admin:
+    # Only honoured with the "dev" Spring profile. Never enable in production.
+    enabled: ${BOOKFLIX_DEV_ADMIN_ENABLED:false}
+    email: ${BOOKFLIX_DEV_ADMIN_EMAIL:}
+    password: ${BOOKFLIX_DEV_ADMIN_PASSWORD:}
+    name: Local Admin
